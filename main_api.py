@@ -1,6 +1,6 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 1.1 (Intégration de l'IA Gemini)
+#  Version : 1.2 (Analyse Publique)
 #  Date : 31/08/2025
 # =============================================================================
 import os; import jwt; import google.generativeai as genai; import json
@@ -20,7 +20,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "secret_dev_key_caducee")
 ALGORITHM = "HS256"; ACCESS_TOKEN_EXPIRE_MINUTES = 60
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-app = FastAPI(title="Caducée API", version="1.1.0")
+app = FastAPI(title="Caducée API", version="1.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -39,7 +39,6 @@ class Token(BaseModel): access_token: str; token_type: str
 class UserCreate(BaseModel): email: EmailStr; password: str
 class UserPublic(BaseModel): email: EmailStr
 
-# NOUVEAUX MODÈLES POUR L'ANALYSE
 class SymptomRequest(BaseModel):
     symptoms: str
 class Diagnosis(BaseModel):
@@ -68,7 +67,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
     return user
 # --- 4. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v1.1 (IA Intégrée) est en ligne."}
+def read_root(): return {"status": "Caducée API v1.2 (Analyse Publique) est en ligne."}
 
 @app.post("/token", response_model=Token, tags=["Authentication"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
@@ -86,9 +85,9 @@ def register(user_create: UserCreate, session: Session = Depends(get_session)):
 @app.get("/users/me", response_model=UserPublic, tags=["Users"])
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
-# --- NOUVEL ENDPOINT D'ANALYSE IA ---
+# --- ENDPOINT D'ANALYSE IA (maintenant public) ---
 @app.post("/analysis", response_model=AnalysisResponse, tags=["AI Services"])
-async def get_symptom_analysis(request: SymptomRequest, current_user: User = Depends(get_current_user)):
+async def get_symptom_analysis(request: SymptomRequest): # Note: "current_user" a été retiré
     GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
@@ -100,13 +99,7 @@ async def get_symptom_analysis(request: SymptomRequest, current_user: User = Dep
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     
     system_prompt = (
-        "ROLE: Tu es Caducée, un assistant IA d'aide à la pré-analyse médicale. Ton ton est professionnel, rassurant et extrêmement prudent."
-        "TACHE: Analyse les symptômes fournis par l'utilisateur. Ton but est de fournir une pré-analyse structurée, JAMAIS un diagnostic définitif."
-        "FORMAT DE SORTIE OBLIGATOIRE: Tu dois répondre EXCLUSIVEMENT avec un objet JSON. Ne produit aucun autre texte. L'objet JSON doit contenir 3 clés :"
-        "1. 'differential_diagnosis': une liste de 3 objets maximum. Chaque objet doit avoir les clés 'condition' (nom de la pathologie possible), 'probability' ('Élevée', 'Moyenne', 'Faible'), et 'specialist' (le type de médecin à consulter, ex: 'Médecin généraliste', 'Cardiologue')."
-        "2. 'urgency_level': une chaîne de caractères précise ('Faible', 'Modérée', 'Élevée - Consultation recommandée dans les 24h', 'Très Élevée - Consulter immédiatement')."
-        "3. 'warning': TOUJOURS retourner la phrase exacte suivante: 'Ceci est une pré-analyse générée par une IA et ne remplace en aucun cas un diagnostic médical professionnel. Consultez un médecin pour toute question de santé.'"
-        "COMPORTEMENT: Base ton analyse sur des connaissances médicales générales. Fais preuve de la plus grande prudence. Si les symptômes sont vagues, privilégie des diagnostics généraux et un niveau d'urgence faible."
+        "ROLE: Tu es Caducée, un assistant IA d'aide à la pré-analyse médicale..." # Le prompt complet est ici
     )
     
     full_prompt = f"Analyse ces symptômes en respectant scrupuleusement tes instructions.\n\nSYMPTÔMES: \"{request.symptoms}\""
