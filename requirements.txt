@@ -1,0 +1,8 @@
+ fastapi
+    uvicorn[standard]
+    sqlmodel
+    passlib[bcrypt]
+    PyJWT
+    email-validator
+    psycopg2-binary
+    python-multipart
