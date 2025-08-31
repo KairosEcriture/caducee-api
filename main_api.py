@@ -1,9 +1,9 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 1.0 (MVP - Squelette)
+#  Version : 1.1 (Intégration de l'IA Gemini)
 #  Date : 31/08/2025
 # =============================================================================
-import os; import jwt
+import os; import jwt; import google.generativeai as genai; import json
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +12,6 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from enum import Enum
 
 # --- 1. CONFIGURATION ---
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./caducee.db").replace("postgres://", "postgresql://", 1)
@@ -21,7 +20,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "secret_dev_key_caducee")
 ALGORITHM = "HS256"; ACCESS_TOKEN_EXPIRE_MINUTES = 60
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-app = FastAPI(title="Caducée API", version="1.0.0")
+app = FastAPI(title="Caducée API", version="1.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -40,6 +39,18 @@ class Token(BaseModel): access_token: str; token_type: str
 class UserCreate(BaseModel): email: EmailStr; password: str
 class UserPublic(BaseModel): email: EmailStr
 
+# NOUVEAUX MODÈLES POUR L'ANALYSE
+class SymptomRequest(BaseModel):
+    symptoms: str
+class Diagnosis(BaseModel):
+    condition: str
+    probability: str
+    specialist: str
+class AnalysisResponse(BaseModel):
+    differential_diagnosis: List[Diagnosis]
+    urgency_level: str
+    warning: str
+
 # --- 3. FONCTIONS UTILITAIRES & SÉCURITÉ ---
 def verify_password(p, h): return pwd_context.verify(p, h)
 def get_password_hash(p): return pwd_context.hash(p)
@@ -57,7 +68,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
     return user
 # --- 4. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v1.0 est en ligne."}
+def read_root(): return {"status": "Caducée API v1.1 (IA Intégrée) est en ligne."}
 
 @app.post("/token", response_model=Token, tags=["Authentication"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
@@ -75,16 +86,42 @@ def register(user_create: UserCreate, session: Session = Depends(get_session)):
 @app.get("/users/me", response_model=UserPublic, tags=["Users"])
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+# --- NOUVEL ENDPOINT D'ANALYSE IA ---
+@app.post("/analysis", response_model=AnalysisResponse, tags=["AI Services"])
+async def get_symptom_analysis(request: SymptomRequest, current_user: User = Depends(get_current_user)):
+    GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+    if not GOOGLE_API_KEY:
+        raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
+    try:
+        genai.configure(api_key=GOOGLE_API_KEY)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur de configuration Gemini: {e}")
+
+    model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    
+    system_prompt = (
+        "ROLE: Tu es Caducée, un assistant IA d'aide à la pré-analyse médicale. Ton ton est professionnel, rassurant et extrêmement prudent."
+        "TACHE: Analyse les symptômes fournis par l'utilisateur. Ton but est de fournir une pré-analyse structurée, JAMAIS un diagnostic définitif."
+        "FORMAT DE SORTIE OBLIGATOIRE: Tu dois répondre EXCLUSIVEMENT avec un objet JSON. Ne produit aucun autre texte. L'objet JSON doit contenir 3 clés :"
+        "1. 'differential_diagnosis': une liste de 3 objets maximum. Chaque objet doit avoir les clés 'condition' (nom de la pathologie possible), 'probability' ('Élevée', 'Moyenne', 'Faible'), et 'specialist' (le type de médecin à consulter, ex: 'Médecin généraliste', 'Cardiologue')."
+        "2. 'urgency_level': une chaîne de caractères précise ('Faible', 'Modérée', 'Élevée - Consultation recommandée dans les 24h', 'Très Élevée - Consulter immédiatement')."
+        "3. 'warning': TOUJOURS retourner la phrase exacte suivante: 'Ceci est une pré-analyse générée par une IA et ne remplace en aucun cas un diagnostic médical professionnel. Consultez un médecin pour toute question de santé.'"
+        "COMPORTEMENT: Base ton analyse sur des connaissances médicales générales. Fais preuve de la plus grande prudence. Si les symptômes sont vagues, privilégie des diagnostics généraux et un niveau d'urgence faible."
+    )
+    
+    full_prompt = f"Analyse ces symptômes en respectant scrupuleusement tes instructions.\n\nSYMPTÔMES: \"{request.symptoms}\""
+
+    try:
+        response = model.generate_content([system_prompt, full_prompt], generation_config=genai.types.GenerationConfig(response_mime_type="application/json"))
+        analysis_data = json.loads(response.text)
+        return analysis_data
+    except Exception as e:
+        print(f"ERREUR CRITIQUE lors de l'appel à Gemini : {e}")
+        raise HTTPException(status_code=503, detail=f"Erreur de communication avec l'assistant IA.")
+
 # --- ENDPOINTS DE DÉVELOPPEMENT ---
 @app.post("/dev/reset-database", tags=["Development Tools"], status_code=status.HTTP_204_NO_CONTENT)
 async def reset_database():
     SQLModel.metadata.drop_all(engine)
     create_db_and_tables()
     return None
-
-@app.get("/dev/check-env", tags=["Development Tools"])
-async def check_environment_variables():
-    return {
-        "DATABASE_URL_status": "Présente" if os.environ.get("DATABASE_URL") else "Absente",
-        "SECRET_KEY_status": "Présente" if os.environ.get("SECRET_KEY") else "Absente",
-    }
