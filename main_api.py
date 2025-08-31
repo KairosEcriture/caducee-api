@@ -22,8 +22,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- 2. MODÈLES DE DONNÉES ---
-    email: str = Field(primary_key=True)
-    hashed_password: str
+email: str = Field(primary_key=True)
+hashed_password: str
 
 def create_db_and_tables(): SQLModel.metadata.create_all(engine)
 @app.on_event("startup")
