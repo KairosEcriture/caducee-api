@@ -1,45 +1,35 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 1.9 (Correction de l'ordre des endpoints)
+#  Version : 1.9.1 (Correction de la syntaxe 'IndentationError')
 #  Date : 02/09/2025
 # =============================================================================
-import os; import json; from fastapi import FastAPI, HTTPException; from pydantic import BaseModel; from typing import List, Dict, Optional; import google.generativeai as genai; from fastapi.middleware.cors import CORSMiddleware
+import os
+import json
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Dict, Optional
+import google.generativeai as genai
+from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="1.9.0")
-# ... (config CORS)
-
-# --- 2. MODÈLES DE DONNÉES (inchangés) ---
-# ...
-
-# --- 3. ENDPOINTS API (RÉORGANISÉS) ---
-
-@app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v1.9 est en ligne."}
-
-@app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
-async def analyze_symptoms(request: SymptomRequest):
-    # ... (code de l'analyse initiale)
-
-@app.post("/analysis/refine", response_model=RefineResponse, tags=["Analysis"])
-async def refine_analysis(request: RefineRequest):
-    # ... (code de l'analyse affinée)
-
-# --- Fichier complet ci-dessous pour éviter toute erreur ---
-import os; import json; from fastapi import FastAPI, HTTPException; from pydantic import BaseModel; from typing import List, Dict, Optional; import google.generativeai as genai; from fastapi.middleware.cors import CORSMiddleware
-app = FastAPI(title="Caducée API", version="1.9.0")
+app = FastAPI(title="Caducée API", version="1.9.1")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],)
 try:
     GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
     if GOOGLE_API_KEY: genai.configure(api_key=GOOGLE_API_KEY)
 except Exception as e: GOOGLE_API_KEY = None
+
+# --- 2. MODÈLES DE DONNÉES ---
 class SymptomRequest(BaseModel): symptoms: str
 class AnalysisResponse(BaseModel): symptom: str; differential_diagnoses: List[str]; first_question: str; recommendations: List[str]; disclaimer: str
 class RefineRequest(BaseModel): symptoms: str; history: List[Dict[str, str]]
 class RefineResponse(BaseModel): next_question: Optional[str] = None; final_recommendation: Optional[str] = None
+
+# --- 3. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v1.9 est en ligne."}
+def read_root(): return {"status": "Caducée API v1.9.1 est en ligne."}
+
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_symptoms(request: SymptomRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
@@ -52,6 +42,7 @@ async def analyze_symptoms(request: SymptomRequest):
         questions = analysis_data.get("questions_to_ask", [])
         return AnalysisResponse(symptom=analysis_data.get("symptom", "N/A"), differential_diagnoses=analysis_data.get("differential_diagnoses", []), first_question=questions[0] if questions else "Avez-vous d'autres symptômes ?", recommendations=analysis_data.get("recommendations", []), disclaimer=analysis_data.get("disclaimer", ""))
     except Exception as e: raise HTTPException(status_code=503, detail=f"Erreur IA: {e}")
+
 @app.post("/analysis/refine", response_model=RefineResponse, tags=["Analysis"])
 async def refine_analysis(request: RefineRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
