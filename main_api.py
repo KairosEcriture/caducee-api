@@ -1,18 +1,12 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 1.9.1 (Correction de la syntaxe 'IndentationError')
+#  Version : 1.9.2 (Avec Prompt de Dialogue Affiné)
 #  Date : 02/09/2025
 # =============================================================================
-import os
-import json
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Dict, Optional
-import google.generativeai as genai
-from fastapi.middleware.cors import CORSMiddleware
+import os; import json; from fastapi import FastAPI, HTTPException; from pydantic import BaseModel; from typing import List, Dict, Optional; import google.generativeai as genai; from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="1.9.1")
+app = FastAPI(title="Caducée API", version="1.9.2")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],)
 try:
@@ -28,13 +22,13 @@ class RefineResponse(BaseModel): next_question: Optional[str] = None; final_reco
 
 # --- 3. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v1.9.1 est en ligne."}
+def read_root(): return {"status": "Caducée API v1.9.2 est en ligne."}
 
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_symptoms(request: SymptomRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    prompt = f'Analyse : "{request.symptoms}". Réponse JSON...';
+    prompt = f'Analyse : "{request.symptoms}". Réponse JSON...'; # Prompt simplifié pour la lisibilité
     try:
         response = model.generate_content(prompt)
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
@@ -48,10 +42,29 @@ async def refine_analysis(request: RefineRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     history_str = "\n".join([f"Q: {h['question']}\nA: {h['answer']}" for h in request.history])
-    prompt = f'Contexte: "{request.symptoms}". Historique: {history_str}. Tâche: Prochaine question ou recommandation finale. Réponse JSON...';
+    
+    prompt = f"""
+    ROLE: Tu es un assistant médical IA.
+    CONTEXTE: Un patient a décrit les symptômes initiaux suivants : "{request.symptoms}".
+    Voici l'historique de la conversation jusqu'à présent :
+    {history_str}
+    
+    TACHE: En te basant sur TOUT le contexte, choisis UNE SEULE des deux actions suivantes :
+    1. Si tu as besoin de plus d'informations pour affiner les diagnostics possibles, génère la prochaine question la plus pertinente à poser.
+    2. Si tu estimes avoir assez d'informations (après 2 ou 3 questions), génère une recommandation finale.
+
+    FORMAT DE SORTIE OBLIGATOIRE: Ta réponse DOIT être un objet JSON valide.
+    - Si tu choisis l'action 1, l'objet doit avoir une seule clé "next_question".
+    - Si tu choisis l'action 2, l'objet doit avoir une seule clé "final_recommendation" qui inclut le disclaimer standard.
+    Ne fournis JAMAIS les deux clés en même temps.
+    """
+    
     try:
         response = model.generate_content(prompt)
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         refine_data = json.loads(cleaned_response)
-        return RefineResponse(next_question=refine_data.get("next_question"), final_recommendation=refine_data.get("final_recommendation"))
+        return RefineResponse(
+            next_question=refine_data.get("next_question"),
+            final_recommendation=refine_data.get("final_recommendation")
+        )
     except Exception as e: raise HTTPException(status_code=503, detail=f"Erreur IA: {e}")
