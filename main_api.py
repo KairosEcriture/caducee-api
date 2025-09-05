@@ -1,6 +1,6 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 2.2 (Nettoyage robuste de la réponse IA)
+#  Version : 2.3 (Calibration finale du prompt de dialogue)
 #  Date : 05/09/2025
 # =============================================================================
 import os
@@ -12,7 +12,7 @@ import google.generativeai as genai
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="2.2.0")
+app = FastAPI(title="Caducée API", version="2.3.0")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],)
 try:
@@ -28,26 +28,17 @@ class RefineResponse(BaseModel): next_question: Optional[str] = None; final_reco
 
 # --- 3. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v2.2 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v2.3 (Dialogue Stable) est en ligne."}
 
 def clean_gemini_response(raw_text: str) -> dict:
-    """Nettoie la réponse de Gemini pour garantir un JSON valide."""
-    # Enlève les démarqueurs de code et les espaces superflus
     cleaned_text = raw_text.strip().replace("```json", "").replace("```", "").strip()
     try:
-        # Tente de parser le JSON directement
         return json.loads(cleaned_text)
-    except json.JSONDecodeError as e:
-        print(f"Erreur de décodage JSON initiale: {e}")
-        # Si ça échoue, on tente de corriger les problèmes courants (ex: guillemets simples)
-        # Note : cette approche est une rustine, le mieux est d'améliorer le prompt
-        # Mais pour la robustesse, c'est une bonne sécurité.
+    except json.JSONDecodeError:
         try:
-            # Une tentative simple de remplacement des guillemets simples par des doubles
             corrected_text = cleaned_text.replace("'", '"')
             return json.loads(corrected_text)
-        except Exception as final_e:
-            print(f"Échec final du parsing JSON après correction: {final_e}")
+        except Exception:
             raise ValueError("La réponse de l'IA n'est pas un JSON valide.")
 
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
@@ -67,9 +58,28 @@ async def refine_analysis(request: RefineRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     history_str = "\n".join([f"Q: {h['question']}\nA: {h['answer']}" for h in request.history])
-    prompt = f'Contexte: "{request.symptoms}". Historique: {history_str}. Tâche: Prochaine question ou recommandation finale. Réponse JSON...';
+    
+    prompt = f"""
+    ROLE: Tu es un assistant médical IA.
+    CONTEXTE: Un patient a décrit les symptômes initiaux suivants : "{request.symptoms}".
+    Voici l'historique de la conversation jusqu'à présent :
+    {history_str}
+    
+    TACHE: En te basant sur TOUT le contexte, choisis UNE SEULE des deux actions suivantes :
+    1. Si l'historique contient MOINS de 3 questions, génère la prochaine question la plus pertinente à poser pour affiner le diagnostic.
+    2. Si l'historique contient 3 questions ou PLUS, OU si la dernière réponse de l'utilisateur est très claire, génère une recommandation finale.
+
+    FORMAT DE SORTIE OBLIGATOIRE: Ta réponse DOIT être un objet JSON valide.
+    - Si tu choisis l'action 1, l'objet doit avoir une seule clé "next_question".
+    - Si tu choisis l'action 2, l'objet doit avoir une seule clé "final_recommendation" qui inclut le disclaimer standard.
+    Ne fournis JAMAIS les deux clés en même temps.
+    """
+    
     try:
         response = model.generate_content(prompt)
         refine_data = clean_gemini_response(response.text)
-        return RefineResponse(next_question=refine_data.get("next_question"), final_recommendation=refine_data.get("final_recommendation"))
+        return RefineResponse(
+            next_question=refine_data.get("next_question"),
+            final_recommendation=refine_data.get("final_recommendation")
+        )
     except Exception as e: raise HTTPException(status_code=503, detail=f"Erreur IA: {e}")
