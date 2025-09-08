@@ -1,6 +1,6 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 2.9 (Nettoyage robuste de la réponse IA et prompt final)
+#  Version : 2.9.1 (Nettoyage robuste de la réponse IA et prompt final)
 #  Date : 08/09/2025
 # =============================================================================
 import os
@@ -12,7 +12,7 @@ import google.generativeai as genai
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="2.9.0")
+app = FastAPI(title="Caducée API", version="2.9.1")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],)
 try:
@@ -32,7 +32,7 @@ class RefineResponse(BaseModel):
 
 # --- 3. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v2.9 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v2.9.1 (Stable) est en ligne."}
 
 def clean_gemini_response(raw_text: str) -> dict:
     # Trouve le début et la fin du JSON
