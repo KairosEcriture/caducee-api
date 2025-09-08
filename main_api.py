@@ -1,7 +1,7 @@
 # =============================================================================
 # CADUCEE - BACKEND API
-# Version : 2.7 (Correction finale de la politique CORS)
-# Date : 05/09/2025
+# Version : 2.8 (Dialogue Approfondi et Recommandation Nuancée)
+# Date : 08/09/2025
 # =============================================================================
 import os
 import json
@@ -12,23 +12,9 @@ import google.generativeai as genai
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="2.7.0")
-
-# === LA CORRECTION EST ICI ===
-origins = [
-    "https://caducee-frontend.onrender.com",
-    "http://localhost",
-    "http://localhost:8080",
-]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"], # On autorise TOUTES les méthodes (GET, POST, OPTIONS)
-    allow_headers=["*"], # On autorise TOUS les en-têtes
-)
-# === FIN DE LA CORRECTION ===
-
+app = FastAPI(title="Caducée API", version="2.8.0")
+origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],)
 try:
     GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
     if GOOGLE_API_KEY: genai.configure(api_key=GOOGLE_API_KEY)
@@ -46,7 +32,7 @@ class RefineResponse(BaseModel):
 
 # --- 3. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v2.7 (CORS Corrigé) est en ligne."}
+def read_root(): return {"status": "Caducée API v2.8 (Dialogue Approfondi) est en ligne."}
 
 def clean_gemini_response(raw_text: str) -> dict:
     cleaned_text = raw_text.strip().replace("```json", "").replace("```", "").strip()
@@ -73,14 +59,16 @@ async def refine_analysis(request: RefineRequest):
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     history_str = "\n".join([f"Q: {h['question']}\nA: {h['answer']}" for h in request.history])
     
+    # === LE PROMPT FINAL ET CORRIGÉ ===
     prompt = f"""
     ROLE: Tu es un assistant médical IA.
     CONTEXTE: Un patient a décrit les symptômes initiaux suivants : "{request.symptoms}".
-    Voici l'historique de la conversation : {history_str}
+    Voici l'historique de la conversation :
+    {history_str}
     
-    TACHE: Choisis UNE SEULE des deux actions suivantes :
-    1. Si l'historique contient MOINS de 3 questions, génère la prochaine question.
-    2. Si l'historique contient 3 questions ou PLUS, génère une recommandation finale.
+    TACHE: En te basant sur TOUT le contexte, choisis UNE SEULE des deux actions suivantes :
+    1. Si tu as besoin de plus d'informations pour poser un diagnostic différentiel crédible, génère la prochaine question la plus pertinente à poser. Continue de poser des questions tant que tu n'as pas une vision claire.
+    2. Si tu estimes avoir assez d'informations pour te faire une idée (généralement après 5 à 10 questions, ou si les symptômes sont très clairs), génère une recommandation finale.
 
     FORMAT DE SORTIE OBLIGATOIRE: Ta réponse DOIT être un objet JSON valide.
     - Si tu choisis l'action 1, l'objet doit avoir DEUX clés : "next_question" et "answer_type" ("yes_no" ou "open_text").
