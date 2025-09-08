@@ -1,7 +1,7 @@
 # =============================================================================
-# CADUCEE - BACKEND API
-# Version : 2.8 (Dialogue Approfondi et Recommandation Nuancée)
-# Date : 08/09/2025
+#  CADUCEE - BACKEND API
+#  Version : 2.9 (Nettoyage robuste de la réponse IA et prompt final)
+#  Date : 08/09/2025
 # =============================================================================
 import os
 import json
@@ -12,7 +12,7 @@ import google.generativeai as genai
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="2.8.0")
+app = FastAPI(title="Caducée API", version="2.9.0")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],)
 try:
@@ -32,14 +32,20 @@ class RefineResponse(BaseModel):
 
 # --- 3. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v2.8 (Dialogue Approfondi) est en ligne."}
+def read_root(): return {"status": "Caducée API v2.9 (Stable) est en ligne."}
 
 def clean_gemini_response(raw_text: str) -> dict:
-    cleaned_text = raw_text.strip().replace("```json", "").replace("```", "").strip()
-    try: return json.loads(cleaned_text)
-    except json.JSONDecodeError:
-        try: return json.loads(cleaned_text.replace("'", '"'))
-        except Exception: raise ValueError("La réponse de l'IA n'est pas un JSON valide.")
+    # Trouve le début et la fin du JSON
+    start = raw_text.find('{')
+    end = raw_text.rfind('}') + 1
+    if start == -1 or end == 0:
+        raise ValueError("Aucun objet JSON trouvé dans la réponse de l'IA.")
+    
+    json_str = raw_text[start:end]
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"La réponse de l'IA n'est pas un JSON valide, même après nettoyage. Erreur: {e}")
 
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_symptoms(request: SymptomRequest):
@@ -59,20 +65,18 @@ async def refine_analysis(request: RefineRequest):
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     history_str = "\n".join([f"Q: {h['question']}\nA: {h['answer']}" for h in request.history])
     
-    # === LE PROMPT FINAL ET CORRIGÉ ===
     prompt = f"""
     ROLE: Tu es un assistant médical IA.
     CONTEXTE: Un patient a décrit les symptômes initiaux suivants : "{request.symptoms}".
-    Voici l'historique de la conversation :
-    {history_str}
+    Voici l'historique de la conversation : {history_str}
     
-    TACHE: En te basant sur TOUT le contexte, choisis UNE SEULE des deux actions suivantes :
-    1. Si tu as besoin de plus d'informations pour poser un diagnostic différentiel crédible, génère la prochaine question la plus pertinente à poser. Continue de poser des questions tant que tu n'as pas une vision claire.
-    2. Si tu estimes avoir assez d'informations pour te faire une idée (généralement après 5 à 10 questions, ou si les symptômes sont très clairs), génère une recommandation finale.
+    TACHE: Choisis UNE SEULE des deux actions suivantes :
+    1. Si l'historique contient MOINS de 5 questions, génère la prochaine question la plus pertinente.
+    2. Si l'historique contient 5 questions ou PLUS, génère une recommandation finale.
 
     FORMAT DE SORTIE OBLIGATOIRE: Ta réponse DOIT être un objet JSON valide.
-    - Si tu choisis l'action 1, l'objet doit avoir DEUX clés : "next_question" et "answer_type" ("yes_no" ou "open_text").
-    - Si tu choisis l'action 2, l'objet doit avoir DEUX clés : "severity_level" (une chaîne parmi "Bénin", "Consultation recommandée", "Urgent") ET "final_recommendation".
+    - Si action 1: objet avec "next_question" et "answer_type".
+    - Si action 2: objet avec "severity_level" et "final_recommendation".
     """
     
     try:
