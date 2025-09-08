@@ -1,10 +1,11 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 2.9.1 (Nettoyage robuste de la réponse IA et prompt final)
+#  Version : 2.9.2 (Nettoyage JSON Agressif)
 #  Date : 08/09/2025
 # =============================================================================
 import os
 import json
+import re # On importe le module des expressions régulières
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -12,7 +13,7 @@ import google.generativeai as genai
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="2.9.1")
+app = FastAPI(title="Caducée API", version="2.9.2")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"],)
 try:
@@ -32,20 +33,19 @@ class RefineResponse(BaseModel):
 
 # --- 3. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v2.9.1 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v2.9.2 (Stable) est en ligne."}
 
 def clean_gemini_response(raw_text: str) -> dict:
-    # Trouve le début et la fin du JSON
-    start = raw_text.find('{')
-    end = raw_text.rfind('}') + 1
-    if start == -1 or end == 0:
+    # Utilise une expression régulière pour extraire le contenu entre { et }
+    match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+    if not match:
         raise ValueError("Aucun objet JSON trouvé dans la réponse de l'IA.")
     
-    json_str = raw_text[start:end]
+    json_str = match.group(0)
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
-        raise ValueError(f"La réponse de l'IA n'est pas un JSON valide, même après nettoyage. Erreur: {e}")
+        raise ValueError(f"La réponse de l'IA n'est pas un JSON valide. Erreur: {e}")
 
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_symptoms(request: SymptomRequest):
