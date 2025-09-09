@@ -1,12 +1,17 @@
 # =============================================================================
-# CADUCEE - BACKEND API
-# Version : 3.0 (Grand Chelem - Dialogue Intelligent & Recommandation Nuancée)
-# Date : 08/09/2025
+#  CADUCEE - BACKEND API
+#  Version : 3.1 (Correction de l'import 're')
+#  Date : 08/09/2025
 # =============================================================================
-import os; import json; from fastapi import FastAPI, HTTPException; from pydantic import BaseModel; from typing import List, Dict, Optional; import google.generativeai as genai; from fastapi.middleware.cors import CORSMiddleware
+import os; import json; import re # L'IMPORT MANQUANT EST ICI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Dict, Optional
+import google.generativeai as genai
+from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="3.0.0")
+app = FastAPI(title="Caducée API", version="3.1.0")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"],)
 try:
@@ -34,7 +39,7 @@ def clean_gemini_response(raw_text: str) -> dict:
 
 # --- 4. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v3.0 (Grand Chelem) est en ligne."}
+def read_root(): return {"status": "Caducée API v3.1 (Stable) est en ligne."}
 
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_symptoms(request: SymptomRequest):
@@ -45,11 +50,10 @@ async def analyze_symptoms(request: SymptomRequest):
     Fournis une pré-analyse structurée. Ta réponse DOIT être un objet JSON valide avec 6 clés :
     1. "symptom": Un résumé court du symptôme principal.
     2. "differential_diagnoses": Une liste de 5 diagnostics différentiels possibles.
-    3. "questions_to_ask": Une liste de 5 questions pertinentes.
-    4. "first_question": La première question de la liste "questions_to_ask".
-    5. "answer_type": Le type de réponse attendu pour la "first_question" (soit "yes_no", soit "open_text").
-    6. "recommendations": Une liste de 3 conseils de première intention.
-    7. "disclaimer": Le message d'avertissement standard.
+    3. "first_question": La première question la plus pertinente à poser.
+    4. "answer_type": Le type de réponse attendu pour la "first_question" (soit "yes_no", soit "open_text").
+    5. "recommendations": Une liste de 3 conseils de première intention.
+    6. "disclaimer": Le message d'avertissement standard.
     """
     try:
         response = model.generate_content(prompt)
@@ -77,4 +81,3 @@ async def refine_analysis(request: RefineRequest):
         refine_data = clean_gemini_response(response.text)
         return RefineResponse(**refine_data)
     except Exception as e: raise HTTPException(status_code=503, detail=f"Erreur IA: {e}")
-
