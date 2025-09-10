@@ -7,3 +7,4 @@ email-validator
 psycopg2-binary
 python-multipart
 google-generativeai
+googlemaps
