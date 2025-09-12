@@ -1,6 +1,6 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 4.1.2 (Calibration finale du prompt de dialogue)
+#  Version : 4.1.3 (Correction finale du prompt initial)
 #  Date : 11/09/2025
 # =============================================================================
 import os; import json; import google.generativeai as genai; import googlemaps; import re
@@ -10,7 +10,7 @@ from typing import List, Dict, Optional
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="4.1.2")
+app = FastAPI(title="Caducée API", version="4.1.3")
 origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 try:
@@ -36,13 +36,24 @@ def clean_gemini_response(raw_text: str) -> dict:
 
 # --- 4. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v4.1.2 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v4.1.3 (Stable) est en ligne."}
 
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_symptoms(request: SymptomRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    prompt = f'Analyse : "{request.symptoms}". Réponse JSON...';
+    
+    prompt = f"""
+    Analyse les symptômes suivants : "{request.symptoms}".
+    Fournis une pré-analyse structurée. Ta réponse DOIT être un objet JSON valide avec 6 clés :
+    1. "symptom": Un résumé court du symptôme principal.
+    2. "differential_diagnoses": Une liste de 3 à 5 diagnostics différentiels possibles.
+    3. "first_question": La première question la plus pertinente à poser.
+    4. "answer_type": Le type de réponse attendu pour la "first_question" (soit "yes_no", soit "open_text").
+    5. "recommendations": Une liste de 2 à 3 conseils de première intention.
+    6. "disclaimer": Le message d'avertissement standard.
+    """
+    
     try:
         response = model.generate_content(prompt)
         analysis_data = clean_gemini_response(response.text)
