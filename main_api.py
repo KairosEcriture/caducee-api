@@ -1,7 +1,7 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 4.1.3 (Correction finale du prompt initial)
-#  Date : 11/09/2025
+#  Version : 4.2 (Stabilité Finale avec CORS Corrigé)
+#  Date : 13/09/2025
 # =============================================================================
 import os; import json; import google.generativeai as genai; import googlemaps; import re
 from fastapi import FastAPI, HTTPException
@@ -10,9 +10,23 @@ from typing import List, Dict, Optional
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- 1. CONFIGURATION ---
-app = FastAPI(title="Caducée API", version="4.1.3")
-origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080"]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="Caducée API", version="4.2.0")
+
+# === LA CORRECTION CORS DÉFINITIVE EST ICI ===
+origins = [
+    "https://caducee-frontend.onrender.com",
+    "http://localhost",
+    "http://localhost:8080",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], # Autorise POST, GET, OPTIONS, etc.
+    allow_headers=["*"], # Autorise tous les en-têtes
+)
+# === FIN DE LA CORRECTION ===
+
 try:
     GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
     if GOOGLE_API_KEY: genai.configure(api_key=GOOGLE_API_KEY)
@@ -36,60 +50,41 @@ def clean_gemini_response(raw_text: str) -> dict:
 
 # --- 4. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v4.1.3 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v4.2 (Stable) est en ligne."}
 
 @app.post("/analysis", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_symptoms(request: SymptomRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    
     prompt = f"""
     Analyse les symptômes suivants : "{request.symptoms}".
-    Fournis une pré-analyse structurée. Ta réponse DOIT être un objet JSON valide avec 6 clés :
-    1. "symptom": Un résumé court du symptôme principal.
-    2. "differential_diagnoses": Une liste de 3 à 5 diagnostics différentiels possibles.
-    3. "first_question": La première question la plus pertinente à poser.
-    4. "answer_type": Le type de réponse attendu pour la "first_question" (soit "yes_no", soit "open_text").
-    5. "recommendations": Une liste de 2 à 3 conseils de première intention.
-    6. "disclaimer": Le message d'avertissement standard.
+    Ta réponse DOIT être un objet JSON valide avec 6 clés : "symptom", "differential_diagnoses", "first_question", "answer_type" (soit "yes_no" ou "open_text"), "recommendations", et "disclaimer".
     """
-    
     try:
         response = model.generate_content(prompt)
         analysis_data = clean_gemini_response(response.text)
         return AnalysisResponse(**analysis_data)
     except Exception as e: raise HTTPException(status_code=503, detail=f"Erreur IA: {e}")
+
 @app.post("/analysis/refine", response_model=RefineResponse, tags=["Analysis"])
 async def refine_analysis(request: RefineRequest):
     if not GOOGLE_API_KEY: raise HTTPException(status_code=500, detail="Clé API Google non configurée.")
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     history_str = "\n".join([f"Q: {h['question']}\nA: {h['answer']}" for h in request.history])
-    
-    # === LE PROMPT FINAL ET CORRIGÉ ===
     prompt = f"""
     ROLE: Tu es un assistant médical IA.
-    CONTEXTE: Un patient a décrit les symptômes initiaux suivants : "{request.symptoms}".
-    Voici l'historique de la conversation : {history_str}
-    
-    TACHE: Choisis UNE SEULE des deux actions suivantes :
-    1. Si l'historique contient MOINS de 5 questions, génère la prochaine question la plus pertinente pour affiner le diagnostic.
-    2. Si l'historique contient 5 questions ou PLUS, OU si la dernière réponse de l'utilisateur est très claire, génère une recommandation finale.
-
-    FORMAT DE SORTIE OBLIGATOIRE: Ta réponse DOIT être un objet JSON valide.
-    - Si tu choisis l'action 1, l'objet doit avoir DEUX clés : "next_question" et "answer_type" (soit "yes_no" pour une question fermée, soit "open_text" pour une question ouverte).
-    - Si tu choisis l'action 2, l'objet doit avoir DEUX clés : "severity_level" (une chaîne parmi "Bénin", "Modéré", "Urgent") ET "final_recommendation".
-    Ne fournis JAMAIS les deux clés en même temps.
+    CONTEXTE: Symptômes initiaux : "{request.symptoms}". Historique: {history_str}
+    TACHE: Choisis UNE SEULE action :
+    1. Si tu as besoin de plus d'infos, génère la prochaine question.
+    2. Si tu as assez d'infos, génère une recommandation finale.
+    FORMAT DE SORTIE OBLIGATOIRE: Un objet JSON valide.
+    - Si action 1: objet avec "next_question" ET "answer_type".
+    - Si action 2: objet avec "severity_level" ("Bénin", "Modéré", "Urgent") ET "final_recommendation".
     """
-    
     try:
         response = model.generate_content(prompt)
         refine_data = clean_gemini_response(response.text)
-        return RefineResponse(
-            next_question=refine_data.get("next_question"),
-            answer_type=refine_data.get("answer_type", "yes_no"),
-            final_recommendation=refine_data.get("final_recommendation"),
-            severity_level=refine_data.get("severity_level")
-        )
+        return RefineResponse(**refine_data)
     except Exception as e: raise HTTPException(status_code=503, detail=f"Erreur IA: {e}")
 
 @app.post("/doctors/nearby", response_model=List[Doctor], tags=["Geolocation"])
