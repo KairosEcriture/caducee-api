@@ -1,6 +1,6 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 5.5 (Correction finale de la politique CORS)
+#  Version : 5.5.1 (Correction finale de la politique CORS pour le local)
 #  Date : 16/09/2025
 # =============================================================================
 import os; import json; import google.generativeai as genai; import googlemaps; import re; import jwt
@@ -16,9 +16,9 @@ from dotenv import load_dotenv
 
 # --- 1. CONFIGURATION ---
 load_dotenv()
-app = FastAPI(title="Caducée API", version="5.5.0")
+app = FastAPI(title="Caducée API", version="5.5.1")
 
-# === LA CORRECTION CORS DÉFINITIVE EST ICI ===
+# === LA CORRECTION EST ICI ===
 origins = [
     "https://caducee-frontend.onrender.com", # L'URL de production
     "http://127.0.0.1:5500", # Pour les tests locaux avec Live Server
@@ -28,8 +28,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # On autorise TOUTES les méthodes
-    allow_headers=["*"], # On autorise TOUS les en-têtes
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 # === FIN DE LA CORRECTION ===
 
@@ -87,7 +87,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
 
 # --- 5. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v5.5 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v5.5.1 (Stable) est en ligne."}
 @app.post("/token", response_model=Token, tags=["User"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
     user = session.get(User, form_data.username)
