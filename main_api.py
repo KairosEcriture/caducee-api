@@ -1,7 +1,7 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 5.5.1 (Correction finale de la politique CORS pour le local)
-#  Date : 16/09/2025
+#  Version : 6.1 (Version Locale Finale et Stable "Insubmersible")
+#  Date : 14/09/2025
 # =============================================================================
 import os; import json; import google.generativeai as genai; import googlemaps; import re; import jwt
 from fastapi import FastAPI, HTTPException, Depends, status
@@ -10,35 +10,25 @@ from typing import List, Dict, Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from dotenv import load_dotenv
 
 # --- 1. CONFIGURATION ---
-load_dotenv()
-app = FastAPI(title="Caducée API", version="5.5.1")
+load_dotenv() # Lit le fichier .env
 
-# === LA CORRECTION EST ICI ===
-origins = [
-    "https://caducee-frontend.onrender.com", # L'URL de production
-    "http://127.0.0.1:5500", # Pour les tests locaux avec Live Server
-    "null" # Pour les tests locaux en ouvrant le fichier directement
-]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-# === FIN DE LA CORRECTION ===
+app = FastAPI(title="Caducée API", version="6.1.0")
+origins = ["*"] # Configuration CORS agressive pour le dev local
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "secret_dev_key")
 ALGORITHM = "HS256"; ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 DATABASE_URL = "sqlite:///./caducee.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
 def create_db_and_tables(): SQLModel.metadata.create_all(engine)
 @app.on_event("startup")
 def on_startup(): create_db_and_tables()
@@ -48,8 +38,10 @@ def get_session():
 # --- 2. MODÈLES DE DONNÉES ---
 class User(SQLModel, table=True):
     email: str = Field(primary_key=True); hashed_password: str
-    age: Optional[int] = None; sex: Optional[str] = None
-    medical_history: Optional[str] = None; allergies: Optional[str] = None
+    first_name: Optional[str] = None; last_name: Optional[str] = None
+    birth_date: Optional[date] = None; birth_place: Optional[str] = None
+    address: Optional[str] = None; phone_number: Optional[str] = None
+    sex: Optional[str] = None; medical_history: Optional[str] = None; allergies: Optional[str] = None
 class Consultation(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True); symptom: str
     final_recommendation: str; severity_level: str
@@ -59,8 +51,16 @@ class Consultation(SQLModel, table=True):
 # --- 3. MODÈLES D'API (Pydantic) ---
 class Token(BaseModel): access_token: str; token_type: str
 class UserCreate(BaseModel): email: EmailStr; password: str
-class UserPublic(BaseModel): email: EmailStr; age: Optional[int] = None; sex: Optional[str] = None; medical_history: Optional[str] = None; allergies: Optional[str] = None
-class UserUpdate(BaseModel): age: Optional[int] = None; sex: Optional[str] = None; medical_history: Optional[str] = None; allergies: Optional[str] = None
+class UserPublic(BaseModel):
+    email: EmailStr; first_name: Optional[str] = None; last_name: Optional[str] = None
+    birth_date: Optional[date] = None; birth_place: Optional[str] = None
+    address: Optional[str] = None; phone_number: Optional[str] = None
+    sex: Optional[str] = None; medical_history: Optional[str] = None; allergies: Optional[str] = None
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = None; last_name: Optional[str] = None
+    birth_date: Optional[date] = None; birth_place: Optional[str] = None
+    address: Optional[str] = None; phone_number: Optional[str] = None
+    sex: Optional[str] = None; medical_history: Optional[str] = None; allergies: Optional[str] = None
 class ConsultationPublic(BaseModel): id: int; symptom: str; final_recommendation: str; severity_level: str; created_at: datetime
 class SymptomRequest(BaseModel): symptoms: str
 class AnalysisResponse(BaseModel): symptom: str; differential_diagnoses: List[str]; first_question: str; answer_type: str; recommendations: List[str]; disclaimer: str
@@ -87,7 +87,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
 
 # --- 5. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v5.5.1 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v6.1 (Stable) est en ligne."}
 @app.post("/token", response_model=Token, tags=["User"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
     user = session.get(User, form_data.username)
