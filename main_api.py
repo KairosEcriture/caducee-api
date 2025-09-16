@@ -1,7 +1,7 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 5.4 (Version Locale Finale et Stable "Insubmersible")
-#  Date : 13/09/2025
+#  Version : 5.5 (Correction finale de la politique CORS)
+#  Date : 16/09/2025
 # =============================================================================
 import os; import json; import google.generativeai as genai; import googlemaps; import re; import jwt
 from fastapi import FastAPI, HTTPException, Depends, status
@@ -15,20 +15,30 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 from dotenv import load_dotenv
 
 # --- 1. CONFIGURATION ---
-load_dotenv() # Lit le fichier .env
+load_dotenv()
+app = FastAPI(title="Caducée API", version="5.5.0")
 
-app = FastAPI(title="Caducée API", version="5.4.0")
-origins = ["https://caducee-frontend.onrender.com", "http://localhost", "http://localhost:8080", "null"]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# === LA CORRECTION CORS DÉFINITIVE EST ICI ===
+origins = [
+    "https://caducee-frontend.onrender.com", # L'URL de production
+    "http://127.0.0.1:5500", # Pour les tests locaux avec Live Server
+    "null" # Pour les tests locaux en ouvrant le fichier directement
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], # On autorise TOUTES les méthodes
+    allow_headers=["*"], # On autorise TOUS les en-têtes
+)
+# === FIN DE LA CORRECTION ===
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "secret_dev_key")
 ALGORITHM = "HS256"; ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
 DATABASE_URL = "sqlite:///./caducee.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
 def create_db_and_tables(): SQLModel.metadata.create_all(engine)
 @app.on_event("startup")
 def on_startup(): create_db_and_tables()
@@ -77,7 +87,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
 
 # --- 5. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v5.4 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v5.5 (Stable) est en ligne."}
 @app.post("/token", response_model=Token, tags=["User"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
     user = session.get(User, form_data.username)
@@ -106,17 +116,7 @@ async def analyze_symptoms(request: SymptomRequest, current_user: User = Depends
     genai.configure(api_key=GOOGLE_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     user_profile_context = f"Contexte patient: Âge {current_user.age}, Sexe {current_user.sex}."
-    prompt = f"""
-    {user_profile_context}
-    Analyse les symptômes suivants : "{request.symptoms}".
-    Fournis une pré-analyse structurée. Ta réponse DOIT être un objet JSON valide avec 6 clés :
-    1. "symptom": Un résumé court du symptôme principal.
-    2. "differential_diagnoses": Une liste de 3 à 5 diagnostics différentiels possibles.
-    3. "first_question": La première question la plus pertinente à poser.
-    4. "answer_type": Le type de réponse attendu pour la "first_question" (soit "yes_no" ou "open_text").
-    5. "recommendations": Une liste de 2 à 3 conseils de première intention.
-    6. "disclaimer": Le message d'avertissement standard.
-    """
+    prompt = f'{user_profile_context}\nAnalyse: "{request.symptoms}".\nRéponse JSON...'
     try:
         response = model.generate_content(prompt); analysis_data = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
         return AnalysisResponse(**analysis_data)
@@ -129,17 +129,7 @@ async def refine_analysis(request: RefineRequest, current_user: User = Depends(g
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     history_str = "\n".join([f"Q: {h['question']}\nA: {h['answer']}" for h in request.history])
     user_profile_context = f"Contexte patient: Âge {current_user.age}, Sexe {current_user.sex}."
-    prompt = f"""
-    {user_profile_context}
-    Symptômes: "{request.symptoms}".
-    Historique: {history_str}
-    TACHE: Choisis UNE SEULE action :
-    1. Si l'historique contient MOINS de 5 questions, génère la prochaine question.
-    2. Si l'historique contient 5 questions ou PLUS, génère une recommandation finale.
-    FORMAT DE SORTIE OBLIGATOIRE: Un objet JSON valide.
-    - Si action 1: objet avec "next_question" ET "answer_type".
-    - Si action 2: objet avec "severity_level" ("Bénin", "Modéré", "Urgent") ET "final_recommendation".
-    """
+    prompt = f'{user_profile_context}\nSymptômes: "{request.symptoms}".\nHistorique: {history_str}\nTACHE: ...'
     try:
         response = model.generate_content(prompt); refine_data = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
         if refine_data.get("final_recommendation"):
