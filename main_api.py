@@ -1,6 +1,6 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 6.1 (Version Locale Finale et Stable "Insubmersible")
+#  Version : 6.1.1 (Version Finale Stable "Insubmersible")
 #  Date : 14/09/2025
 # =============================================================================
 import os; import json; import google.generativeai as genai; import googlemaps; import re; import jwt
@@ -17,9 +17,15 @@ from dotenv import load_dotenv
 # --- 1. CONFIGURATION ---
 load_dotenv() # Lit le fichier .env
 
-app = FastAPI(title="Caducée API", version="6.1.0")
-origins = ["*"] # Configuration CORS agressive pour le dev local
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="Caducée API", version="6.1.1")
+origins = ["*"] # Configuration CORS agressive pour le dev et la prod
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "secret_dev_key")
 ALGORITHM = "HS256"; ACCESS_TOKEN_EXPIRE_MINUTES = 60
@@ -87,7 +93,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
 
 # --- 5. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v6.1 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v6.1.1 (Stable) est en ligne."}
 @app.post("/token", response_model=Token, tags=["User"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
     user = session.get(User, form_data.username)
@@ -146,6 +152,3 @@ def find_nearby_doctors(request: NearbyDoctorsRequest):
         places_result = gmaps.places_nearby(location=(request.latitude, request.longitude), radius=5000, keyword="médecin généraliste", language="fr")
         return [Doctor(name=p.get('name'), address=p.get('vicinity'), rating=p.get('rating'), url=f"https://www.google.com/maps/place/?q=place_id:{p.get('place_id')}") for p in places_result.get('results', [])[:3]]
     except Exception as e: raise HTTPException(status_code=503, detail=f"Erreur du service de géolocalisation: {e}")
-
-
-
