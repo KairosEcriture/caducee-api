@@ -1,6 +1,6 @@
 # =============================================================================
 #  CADUCEE - BACKEND API
-#  Version : 6.1.1 (Version Finale Stable "Insubmersible")
+#  Version : 6.2 (Synchronisation Finale avec le Frontend)
 #  Date : 14/09/2025
 # =============================================================================
 import os; import json; import google.generativeai as genai; import googlemaps; import re; import jwt
@@ -15,26 +15,16 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 from dotenv import load_dotenv
 
 # --- 1. CONFIGURATION ---
-load_dotenv() # Lit le fichier .env
-
-app = FastAPI(title="Caducée API", version="6.1.1")
-origins = ["*"] # Configuration CORS agressive pour le dev et la prod
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+load_dotenv()
+app = FastAPI(title="Caducée API", version="6.2.0")
+origins = ["*"]
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 SECRET_KEY = os.environ.get("SECRET_KEY", "secret_dev_key")
 ALGORITHM = "HS256"; ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
 DATABASE_URL = "sqlite:///./caducee.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
 def create_db_and_tables(): SQLModel.metadata.create_all(engine)
 @app.on_event("startup")
 def on_startup(): create_db_and_tables()
@@ -93,7 +83,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
 
 # --- 5. ENDPOINTS API ---
 @app.get("/", tags=["Status"])
-def read_root(): return {"status": "Caducée API v6.1.1 (Stable) est en ligne."}
+def read_root(): return {"status": "Caducée API v6.2 (Stable) est en ligne."}
 @app.post("/token", response_model=Token, tags=["User"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
     user = session.get(User, form_data.username)
